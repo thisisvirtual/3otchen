@@ -44,26 +44,26 @@ body{font-family:var(--sans);display:grid;place-items:center}
 #goldTimer.blink{animation:gblink .3s steps(2) infinite}
 @keyframes gblink{to{opacity:.35}}
 
-#goldPop{position:absolute;inset:0;z-index:25;display:grid;place-content:center;
+#goldPop{position:absolute;inset:0 0 34% 0;z-index:25;display:grid;place-content:center;
   justify-items:center;pointer-events:none}
 #goldPop[hidden]{display:none}
-#goldPop .rays{position:absolute;width:min(70vh,480px);height:min(70vh,480px);
+#goldPop .rays{position:absolute;width:min(38vh,270px);height:min(38vh,270px);
   border-radius:50%;
-  background:conic-gradient(from 0deg,rgba(245,215,126,.4) 0 14deg,transparent 14deg 32deg,
-    rgba(245,215,126,.4) 32deg 46deg,transparent 46deg 64deg,rgba(245,215,126,.4) 64deg 78deg,
-    transparent 78deg 96deg,rgba(245,215,126,.4) 96deg 110deg,transparent 110deg 128deg,
-    rgba(245,215,126,.4) 128deg 142deg,transparent 142deg 160deg,rgba(245,215,126,.4) 160deg 174deg,
-    transparent 174deg 192deg,rgba(245,215,126,.4) 192deg 206deg,transparent 206deg 224deg,
-    rgba(245,215,126,.4) 224deg 238deg,transparent 238deg 256deg,rgba(245,215,126,.4) 256deg 270deg,
-    transparent 270deg 288deg,rgba(245,215,126,.4) 288deg 302deg,transparent 302deg 320deg,
-    rgba(245,215,126,.4) 320deg 334deg,transparent 334deg 360deg);
+  background:conic-gradient(from 0deg,rgba(245,215,126,.26) 0 14deg,transparent 14deg 32deg,
+    rgba(245,215,126,.26) 32deg 46deg,transparent 46deg 64deg,rgba(245,215,126,.26) 64deg 78deg,
+    transparent 78deg 96deg,rgba(245,215,126,.26) 96deg 110deg,transparent 110deg 128deg,
+    rgba(245,215,126,.26) 128deg 142deg,transparent 142deg 160deg,rgba(245,215,126,.26) 160deg 174deg,
+    transparent 174deg 192deg,rgba(245,215,126,.26) 192deg 206deg,transparent 206deg 224deg,
+    rgba(245,215,126,.26) 224deg 238deg,transparent 238deg 256deg,rgba(245,215,126,.26) 256deg 270deg,
+    transparent 270deg 288deg,rgba(245,215,126,.26) 288deg 302deg,transparent 302deg 320deg,
+    rgba(245,215,126,.26) 320deg 334deg,transparent 334deg 360deg);
   -webkit-mask:radial-gradient(circle,transparent 26%,#000 27%,#000 62%,transparent 63%);
   mask:radial-gradient(circle,transparent 26%,#000 27%,#000 62%,transparent 63%);
   animation:spinrays 5s linear infinite}
 @keyframes spinrays{to{transform:rotate(360deg)}}
-#goldImg{width:min(22vh,170px);
-  filter:drop-shadow(0 0 30px rgba(245,215,126,.95))}
-#goldTxt{margin-top:10px;font-weight:900;font-size:clamp(22px,4.5vw,32px);
+#goldImg{width:min(13vh,104px);
+  filter:drop-shadow(0 0 18px rgba(245,215,126,.9))}
+#goldTxt{margin-top:6px;font-weight:900;font-size:clamp(15px,3.2vw,22px);
   letter-spacing:.14em;color:var(--gold);
   text-shadow:0 3px 0 #8A5E10,0 6px 22px rgba(20,36,61,.7)}
 
