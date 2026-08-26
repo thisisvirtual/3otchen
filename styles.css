@@ -227,3 +227,46 @@ body.ltr #nameInput{direction:ltr}
 .boardtabs .toggle{min-width:92px}
 .boardnote{margin-top:8px;font-size:12px;opacity:.6;color:var(--white-wash);
   font-family:var(--mono)}
+
+/* ---------- Board: podium, rows, pinned own rank ---------- */
+.boardtabs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+
+.podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:6px;
+  align-items:end;margin:10px 0 8px}
+.podium[hidden]{display:none}
+.pod{display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:10px 4px 8px;border-radius:14px;text-align:center;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14)}
+.pod .medal{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;
+  font-weight:900;font-size:13px;color:#1B2C4A}
+.pod .nm{font-size:13px;font-weight:800;line-height:1.15;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pod .sc{font-size:16px;font-weight:900;color:var(--gold)}
+.pod .ds{font-size:10px;opacity:.6;font-style:normal}
+.pod1{padding-top:16px;background:rgba(245,215,126,.16);
+  border-color:rgba(245,215,126,.5)}
+.pod1 .medal{background:#F5D77E}
+.pod1 .sc{font-size:19px}
+.pod2 .medal{background:#CFD8E3}
+.pod3 .medal{background:#D9A272}
+.pod.me{outline:2px solid rgba(143,199,232,.8)}
+
+.scorelist li{display:flex;align-items:center;gap:10px}
+.scorelist .rk{min-width:22px;opacity:.5;font-size:12px;text-align:center}
+.scorelist .who{display:flex;flex-direction:column;flex:1;min-width:0}
+.scorelist .who .nm{font-weight:700;font-size:14px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scorelist .who .ds{font-size:11px;opacity:.55;font-style:normal}
+.scorelist .sc{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05}
+.scorelist .sc b{font-size:15px;font-weight:900;color:var(--gold)}
+.scorelist .sc i{font-size:9px;opacity:.55;font-style:normal;letter-spacing:.08em}
+
+.merow{display:flex;align-items:center;gap:10px;margin-top:8px;padding:9px 12px;
+  border-radius:12px;background:rgba(143,199,232,.16);
+  border:1px solid rgba(143,199,232,.45)}
+.merow[hidden]{display:none}
+.merow.intop{opacity:.75}
+.merow .rk{font-weight:900;font-size:13px;color:#8FC7E8}
+.merow .who{flex:1;min-width:0;font-size:13px;font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.merow .sc{font-size:14px;font-weight:900;color:var(--gold)}
