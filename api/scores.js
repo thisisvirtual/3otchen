@@ -94,12 +94,22 @@ module.exports = async function handler(req, res) {
         return res.status(429).json({ ok: false, reason: 'slow-down' });
       }
 
-      // GT keeps a player's personal best rather than their latest run.
-      await redis([
-        ['ZADD', BOARD, 'GT', 'CH', String(s), n],
-        ['HSET', META, n, JSON.stringify({ m, b, ts: Date.now() })],
-        ['ZREMRANGEBYRANK', BOARD, 0, -501],   // keep the board bounded
-      ]);
+      // GT keeps a player's personal best rather than their latest run. CH makes
+      // ZADD report whether the score actually moved, which is what decides the
+      // metadata write below.
+      const [added] = await redis([['ZADD', BOARD, 'GT', 'CH', String(s), n]]);
+      const improved = Number(added.result) === 1;
+
+      // Only stamp metadata on a new best. Writing it every run detached the
+      // distance from the score: the board kept the best points but displayed
+      // the metres of whatever run happened last, so a 100k score could show
+      // 402 m next to it.
+      const after = [];
+      if (improved) {
+        after.push(['HSET', META, n, JSON.stringify({ m, b, ts: Date.now() })]);
+      }
+      after.push(['ZREMRANGEBYRANK', BOARD, 0, -501]);   // keep the board bounded
+      await redis(after);
       const [rank, best] = await redis([
         ['ZREVRANK', BOARD, n],
         ['ZSCORE', BOARD, n],
