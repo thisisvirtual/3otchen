@@ -3,7 +3,7 @@
    world holds still until the first tap, one tap back into a run). */
 (() => {
 'use strict';
-const BUILD='v18';
+const BUILD='v20';
 
 // ---------------------------------------------------------------- config
 const VH=540, GROUND_OFF=92, MAX_JUMPS=2;
@@ -56,6 +56,7 @@ tn:{dir:'rtl',
  boonGold:'ذهب !', boonRain:'شتا دبابز !', boonWind:'ريح الصحرا !',
  boonGoldSub:'كسّر كل شي', boonRainSub:'الدبابز طايحة !', boonWindSub:'الريح تجرفهم',
  world:'العالم', mine:'متاعي', boardOff:'الترتيب العالمي ما يخدمش توّا',
+ wkTab:'هالجمعة', allTab:'الكل', youAre:'إنتي', ofN:(r,n)=>`${r} من ${n} لاعب`,
  ev:{coupure:['\u26a0 EL MA BECH YET9TA3','EL MA MA9TOU3 !'],
      delestage:['⚠ EL DHAW BECH YEMCHI','DHAW MA9TOU3 !'],
      canicule:['⚠ S’HANA JEYA','S’HANA !'],
@@ -103,6 +104,7 @@ fr:{dir:'ltr',
  boonGold:'EN OR !', boonRain:'PLUIE DE BOUTEILLES !', boonWind:'VENT DE SABLE !',
  boonGoldSub:'casse tout', boonRainSub:'ça tombe du ciel !', boonWindSub:'le vent les balaie',
  world:'Monde', mine:'Moi', boardOff:'Classement mondial indisponible',
+ wkTab:'Semaine', allTab:'Tout', youAre:'Toi', ofN:(r,n)=>`${r} sur ${n} joueurs`,
  ev:{coupure:['\u26a0 COUPURE D\u2019EAU IMMINENTE','EAU COUPÉE !'],
      delestage:['⚠ DÉLESTAGE IMMINENT','COURANT COUPÉ !'],
      canicule:['⚠ CANICULE EN APPROCHE','CANICULE !'],
@@ -150,6 +152,7 @@ en:{dir:'ltr',
  boonGold:'GOLD RUSH!', boonRain:'BOTTLE RAIN!', boonWind:'SANDSTORM!',
  boonGoldSub:'smash everything', boonRainSub:'they fall from the sky!', boonWindSub:'the wind clears the way',
  world:'World', mine:'Me', boardOff:'Global board unavailable',
+ wkTab:'Week', allTab:'All time', youAre:'You', ofN:(r,n)=>`${r} of ${n} players`,
  ev:{coupure:['\u26a0 WATER CUT INCOMING','WATER\u2019S CUT!'],
      delestage:['⚠ BLACKOUT INCOMING','POWER’S OUT!'],
      canicule:['⚠ HEATWAVE INCOMING','HEATWAVE!'],
@@ -245,7 +248,23 @@ const bestScore=()=>loadScores()[0]?.s||0;
 // Same-origin /api/scores. If it isn't deployed or isn't configured, every call
 // fails soft and the panel shows the local board instead — the game never waits
 // on the network and never breaks because of it.
-const BOARD={mode:'world',rows:null,state:'idle',ts:0};
+const BOARD={scope:'week',rows:null,me:null,total:0,week:'',state:'idle',ts:0,key:''};
+
+// A per-device id, generated once and kept. The board keys on this, never on the
+// name: keying by name meant two players called Nour shared one row and
+// overwrote each other, which is certain to happen the moment this is public.
+const UID_KEY='ateshane.uid';
+function myUid(){
+  let u=store.get(UID_KEY,'');
+  if(!/^[A-Za-z0-9_-]{8,24}$/.test(u)){
+    let r=new Uint8Array(12);
+    if(typeof crypto!=='undefined'&&crypto.getRandomValues)crypto.getRandomValues(r);
+    else for(let i=0;i<12;i++)r[i]=(Math.random()*256)|0;
+    u=Array.from(r,x=>x.toString(36).padStart(2,'0')).join('').slice(0,16);
+    store.set(UID_KEY,u);
+  }
+  return u;
+}
 // Same origin by default. Set window.ATESHANE_API in index.html to point every
 // future build at one fixed board — handy because each Vercel Drop spins up a
 // brand-new project that won't carry the old environment variables.
@@ -264,12 +283,15 @@ async function api(path,opts={},ms=6000){
   finally{ clearTimeout(kill); }
 }
 async function fetchBoard(force){
+  if(BOARD.scope==='local')return;
+  const key=BOARD.scope;
   if(BOARD.state==='loading')return;
-  if(!force&&BOARD.rows&&Date.now()-BOARD.ts<30000)return;
+  if(!force&&BOARD.rows&&BOARD.key===key&&Date.now()-BOARD.ts<30000)return;
   BOARD.state='loading';renderScores();
-  const d=await api(API_URL);
+  const d=await api(`${API_URL}?scope=${key}&uid=${encodeURIComponent(myUid())}`);
   if(d&&d.ok&&Array.isArray(d.top)){
-    BOARD.rows=d.top;BOARD.ts=Date.now();BOARD.state='ok';
+    BOARD.rows=d.top;BOARD.me=d.me||null;BOARD.total=d.total||0;
+    BOARD.week=d.week||'';BOARD.key=key;BOARD.ts=Date.now();BOARD.state='ok';
   }else{
     BOARD.state='off';
   }
@@ -278,7 +300,7 @@ async function fetchBoard(force){
 async function submitScore(n,sc,m,b){
   const d=await api(API_URL,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({n:(n||'?').slice(0,14),s:sc,m,b}),
+    body:JSON.stringify({u:myUid(),n:(n||'?').slice(0,14),s:sc,m,b}),
   });
   if(d&&d.ok){ BOARD.rows=null; return d.rank; }
   return null;
@@ -2435,47 +2457,103 @@ function syncMute(m){ el('muteBtn').textContent=m?'\ud83d\udd07':'\ud83d\udd0a';
   el('tglSound').textContent=m?t('off'):t('on'); }
 
 // ---- score list ----
+const fmtN=(n)=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,'\u202F');
+
+// One row: rank, then name over distance, then score over its unit. The two
+// numbers used to sit side by side with nothing saying which was which.
+function boardLi(e,isMe){
+  const li=document.createElement('li');
+  if(isMe)li.classList.add('me');
+  li.innerHTML='<span class="rk"></span>'+
+    '<span class="who"><b class="nm"></b><i class="ds"></i></span>'+
+    '<span class="sc"><b></b><i></i></span>';
+  li.querySelector('.rk').textContent=e.rank;
+  li.querySelector('.nm').textContent=e.n||'?';
+  li.querySelector('.ds').textContent=e.m!=null?fmtN(e.m)+' '+t('m'):'';
+  li.querySelector('.sc b').textContent=fmtN(e.s);
+  li.querySelector('.sc i').textContent=t('pts');
+  return li;
+}
+
+function podCard(e,place,isMe){
+  const d=document.createElement('div');
+  d.className='pod pod'+place+(isMe?' me':'');
+  d.innerHTML='<span class="medal"></span><b class="nm"></b>'+
+    '<span class="sc"></span><i class="ds"></i>';
+  d.querySelector('.medal').textContent=place;
+  d.querySelector('.nm').textContent=e.n||'?';
+  d.querySelector('.sc').textContent=fmtN(e.s);
+  d.querySelector('.ds').textContent=e.m!=null?fmtN(e.m)+' '+t('m'):'';
+  return d;
+}
+
 function renderScores(highlight=-1){
   const list=el('scoreList');if(!list)return;
+  const pod=el('podium'),meRow=el('meRow'),note=el('boardNote');
   list.innerHTML='';
-  const note=el('boardNote');
-  const wt=el('tabWorld'),lt=el('tabLocal');
-  if(wt){wt.textContent=t('world');wt.setAttribute('aria-pressed',String(BOARD.mode==='world'));}
-  if(lt){lt.textContent=t('mine');lt.setAttribute('aria-pressed',String(BOARD.mode==='local'));}
+  if(pod){pod.innerHTML='';pod.hidden=true;}
+  if(meRow){meRow.innerHTML='';meRow.hidden=true;}
 
-  const me=(store.get('ateshane.name','')||'').slice(0,14);
-  let rows,mine=highlight;
-  if(BOARD.mode==='world'&&BOARD.state==='ok'&&BOARD.rows){
-    rows=BOARD.rows;mine=-1;
-    if(note)note.hidden=true;
-  }else if(BOARD.mode==='world'&&BOARD.state==='loading'){
+  const tabs=[['tabWeek','week','wkTab'],['tabAll','all','allTab'],['tabLocal','local','mine']];
+  for(const [id,sc,key] of tabs){
+    const b=el(id);if(!b)continue;
+    b.textContent=t(key);
+    b.setAttribute('aria-pressed',String(BOARD.scope===sc));
+  }
+
+  const online=BOARD.scope!=='local';
+  if(online&&BOARD.state==='loading'){
     const li=document.createElement('li');
     li.className='empty';li.textContent='…';
     list.appendChild(li);
     if(note)note.hidden=true;
     return;
+  }
+
+  const uid=online?myUid():null;
+  let rows,mine=highlight,myRow=null;
+  if(online&&BOARD.state==='ok'&&BOARD.rows){
+    rows=BOARD.rows;mine=-1;myRow=BOARD.me;
+    if(note)note.hidden=true;
   }else{
-    rows=loadScores();
+    rows=loadScores().map((e,i)=>({...e,rank:i+1}));
     if(note){
-      note.hidden=!(BOARD.mode==='world'&&BOARD.state==='off');
+      note.hidden=!(online&&BOARD.state==='off');
       note.textContent=t('boardOff');
     }
   }
+
   if(!rows.length){
     const li=document.createElement('li');
     li.className='empty';li.textContent=t('empty');
     list.appendChild(li);return;
   }
-  rows.forEach((e,i)=>{
-    const li=document.createElement('li');
-    if(i===mine||(BOARD.mode==='world'&&BOARD.state==='ok'&&me&&e.n===me))
-      li.classList.add('me');
-    li.innerHTML=`<span class="rk">${i+1}</span><span class="nm"></span>`+
-      `<span class="sc">${e.s}</span>`;
-    li.querySelector('.nm').textContent=
-      `${e.n}${e.m!=null?' · '+e.m+' '+t('m'):''}`;
-    list.appendChild(li);
-  });
+
+  const isMine=(e,i)=>online?(uid&&e.u===uid):(i===mine);
+
+  // Top three get the podium, the rest a list. Below ten the board stops and
+  // your own row is pinned instead, so rank 400 still sees where they stand.
+  if(online&&pod&&rows.length>=3){
+    pod.hidden=false;
+    [rows[1],rows[0],rows[2]].forEach((e,k)=>{
+      const place=[2,1,3][k];
+      pod.appendChild(podCard(e,place,isMine(e,place-1)));
+    });
+    rows.slice(3).forEach((e,i)=>list.appendChild(boardLi(e,isMine(e,i+3))));
+  }else{
+    rows.forEach((e,i)=>list.appendChild(boardLi(e,isMine(e,i))));
+  }
+
+  if(online&&myRow&&meRow){
+    meRow.hidden=false;
+    meRow.className='merow panel-anim'+(myRow.top?' intop':'');
+    meRow.innerHTML='<span class="rk"></span><span class="who"></span><span class="sc"></span>';
+    meRow.querySelector('.rk').textContent='#'+myRow.rank;
+    meRow.querySelector('.who').textContent=
+      (myRow.n||t('youAre'))+' · '+t('youAre');
+    meRow.querySelector('.sc').textContent=fmtN(myRow.s)+' '+t('pts');
+    if(BOARD.total>0)meRow.title=t('ofN')(myRow.rank,BOARD.total);
+  }
 }
 
 // ---- flow ----
@@ -2600,10 +2678,12 @@ click('btnWipe',()=>{store.set(SCORES_KEY,'[]');renderScores();showPanel('scores
 el('tglSound').addEventListener('click',()=>syncMute(Audio2.toggleMute()));
 for(const l2 of LANGS)
   el('lang_'+l2).addEventListener('click',()=>{Audio2.button();applyLang(l2);});
-el('tabWorld').addEventListener('click',()=>{
-  Audio2.button();BOARD.mode='world';renderScores();fetchBoard(false);});
+el('tabWeek').addEventListener('click',()=>{
+  Audio2.button();BOARD.scope='week';renderScores();fetchBoard(false);});
+el('tabAll').addEventListener('click',()=>{
+  Audio2.button();BOARD.scope='all';renderScores();fetchBoard(false);});
 el('tabLocal').addEventListener('click',()=>{
-  Audio2.button();BOARD.mode='local';renderScores();});
+  Audio2.button();BOARD.scope='local';renderScores();});
 el('tglSteps').addEventListener('click',e=>{
   const on=e.currentTarget.getAttribute('aria-pressed')!=='true';
   e.currentTarget.setAttribute('aria-pressed',String(on));
