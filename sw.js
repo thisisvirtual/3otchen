@@ -1,4 +1,4 @@
-const CACHE = 'ateshane-v18';
+const CACHE = 'ateshane-v19';
 const ASSETS = [
   './', './index.html', './styles.css', './game.js', './audio.js',
   './vendor-anime.min.js', './vendor-zzfx.js', './manifest.webmanifest',
@@ -28,6 +28,15 @@ self.addEventListener('activate', e => {
 // Everything else: cache-first for speed; the versioned cache name invalidates on deploy.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+
+  // The leaderboard is live data, not an asset. Never cache it and never serve
+  // it from cache: storing one failed response freezes the world board on that
+  // failure permanently, even after the backend is fixed. Straight to network.
+  let url;
+  try { url = new URL(e.request.url); } catch (err) { return; }
+  if (url.pathname.startsWith('/api/')) return;
+  if (url.origin !== self.location.origin) return;
+
   const isNav = e.request.mode === 'navigate' ||
     (e.request.headers.get('accept') || '').includes('text/html');
   if (isNav) {
@@ -42,9 +51,13 @@ self.addEventListener('fetch', e => {
   }
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+      // Only cache real successes. A 404 or a 500 stored here would be served
+      // for the entire life of this cache version.
+      if (res && res.ok && res.type === 'basic') {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+      }
       return res;
-    }).catch(() => caches.match('./index.html')))
+    }).catch(() => caches.match(e.request)))
   );
 });
