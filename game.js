@@ -1462,13 +1462,15 @@ function activateGold(brand,x,y){
     pop.hidden=false;
     if(A){
       A.remove('#goldImg');A.remove('#goldTxt');
+      // Kept short on purpose: this fires mid-run, and every frame it is up is a
+      // frame of obstacles you cannot read. ~1.0s total, was ~2.0s.
       A.timeline({easing:'spring(1, 80, 11, 0)'})
-        .add({targets:'#goldImg',scale:[0,1],rotate:['-18deg','0deg'],duration:700})
-        .add({targets:'#goldTxt',translateY:[26,0],opacity:[0,1],duration:500},'-=450')
-        .add({targets:['#goldImg','#goldTxt'],opacity:0,duration:380,delay:900,
+        .add({targets:'#goldImg',scale:[0,1],rotate:['-14deg','0deg'],duration:400})
+        .add({targets:'#goldTxt',translateY:[18,0],opacity:[0,1],duration:300},'-=260')
+        .add({targets:['#goldImg','#goldTxt'],opacity:0,duration:240,delay:320,
               easing:'easeInQuad',complete:()=>{pop.hidden=true;
                 img.style.opacity=txt.style.opacity=1;}});
-    }else setTimeout(()=>{pop.hidden=true;},1600);
+    }else setTimeout(()=>{pop.hidden=true;},1000);
   }
 }
 
