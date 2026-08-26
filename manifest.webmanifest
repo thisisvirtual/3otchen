@@ -1,0 +1,19 @@
+{
+  "name": "Ateshane — Course contre la soif",
+  "short_name": "Ateshane",
+  "description": "Cours à travers la Tunisie, ramasse les bouteilles, ne laisse pas la soif te rattraper.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#14243D",
+  "theme_color": "#17457A",
+  "lang": "fr",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "ateshane",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ateshane — Tunisian endless-runner PWA (سابق العطش)",
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}

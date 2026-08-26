@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>عطشان — سابق العطش</title>
+<meta name="theme-color" content="#17457A">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="frame">
+  <div id="installBar" hidden>
+    <span id="installText">ركّب «عطشان» في تليفونك — يخدم حتّى بلا إنترنت</span>
+    <button id="btnInstall">ركّب</button>
+    <button id="btnInstallClose" aria-label="سكّر">✕</button>
+  </div>
+  <canvas id="game"></canvas>
+  <div id="banner" hidden></div>
+
+  <div id="hud" hidden>
+    <div class="hud-left">
+      <div class="stat"><span id="bottles">0</span><span class="unit" id="bottlesUnit">دبّوزة</span></div>
+      <div class="sub"><span id="metres">0</span><span id="metresUnit"> متر</span></div>
+      <div id="combo" hidden>×<span id="comboN">2</span><i id="comboBar"></i></div>
+      <div id="goldTimer" hidden>✦ <span id="goldT">7</span></div>
+    </div>
+    <div class="hud-right">
+      <div class="stat" id="score">0</div>
+      <div class="sub" id="ptsLbl">نقاط</div>
+    </div>
+  </div>
+
+  <button id="pauseBtn" hidden title="وقفة (P)">⏸</button>
+
+  <div id="goldPop" hidden>
+    <div class="rays"></div>
+    <img id="goldImg" alt="">
+    <div id="goldTxt">ذهب !</div>
+  </div>
+
+  <div id="ready" hidden>
+    <div class="ready-tap">↑</div>
+    <p class="ready-title" id="readyTitle">دُزّ باش تبدا</p>
+    <p class="ready-sub" id="readyName"></p>
+  </div>
+
+  <div id="screen" class="screen">
+
+    <div class="panel menu" id="panelMenu">
+      <img src="assets/logo.png" alt="عطشان" class="logo panel-anim">
+      <p class="tag panel-anim" id="tagline">سابق العطش · SABBE9 EL 3TACH</p>
+      <div class="namewrap panel-anim">
+        <input id="nameInput" maxlength="12" placeholder="شنيّة إسمك ؟" autocomplete="off"
+               spellcheck="false" aria-label="إسمك" dir="rtl">
+        <p id="nameHint" hidden>بلا إسم ما تجريش !</p>
+      </div>
+      <button class="gbtn panel-anim" id="btnPlay">
+        <span class="ar" id="playAr">ابدأ</span><span class="lat" id="playLat">YALLA !</span><span class="ico">▶</span>
+      </button>
+      <button class="gbtn panel-anim" id="btnHelp">
+        <span class="ar" id="helpAr">كيفاش نلعب</span><span class="lat" id="helpLat">KIFECH ?</span><span class="ico">?</span>
+      </button>
+      <button class="gbtn panel-anim" id="btnScores">
+        <span class="ar" id="scoresAr">أحسن النتائج</span><span class="lat" id="scoresLat">RECORDS</span><span class="ico">🏆</span>
+      </button>
+      <button class="gbtn panel-anim" id="btnSettings">
+        <span class="ar" id="setAr">الإعدادات</span><span class="lat" id="setLat">SETTINGS</span><span class="ico">⚙</span>
+      </button>
+      <p class="bestline panel-anim"><span id="bestLbl">أحسن نتيجة : </span><strong id="menuBest">0</strong> <span id="buildTag" class="build"></span></p>
+    </div>
+
+    <div class="panel" id="panelHelp" hidden>
+      <h2 class="ptitle panel-anim" id="helpTitle">كيفاش نلعب</h2>
+      <div class="helprow panel-anim"><span class="hico">👆</span>
+        <p id="h1">دُزّ باش <b>تنقّز</b> — دُزّ مرّة أخرى في الهواء باش تنقّز <b>زوز</b>. أطلق فيسع، النقزة تقصر.</p></div>
+      <div class="helprow panel-anim"><span class="hico"><img src="assets/palma.png" alt=""></span>
+        <p id="h2">لمّ <b>الدبابز</b> : يعبّيولك القربة ويطلّعولك <b>الكومبو</b> (×2…×9).</p></div>
+      <div class="helprow panel-anim"><span class="hico gold"><img src="assets/gold/marwa.png" alt=""></span>
+        <p id="h3">الدبّوزة الذهبيّة الصغيرة في الشاشة <b>تتعبّى وإنتي تلعب</b>. كي تعبى : <b>٧ ثواني ذهب</b>، تكسّر كل شي.</p></div>
+      <div class="helprow panel-anim"><span class="hico">🌵</span>
+        <p id="h4">كان دقّيت في حاجة، <b>وفات</b>. دقّة وحدة برك.</p></div>
+      <div class="helprow panel-anim"><span class="hico">🥵</span>
+        <p id="h5">القربة <b>تنقص وإنتي تجري</b>. فرغت = وفات… وباش تسمعو يلهث.</p></div>
+      <button class="gbtn panel-anim" id="btnHelpGo">
+        <span class="ar" id="goAr">يالله</span><span class="lat" id="goLat">NEBDEW !</span><span class="ico">▶</span>
+      </button>
+    </div>
+
+    <div class="panel" id="panelScores" hidden>
+      <h2 class="ptitle panel-anim" id="scoresTitle">أحسن النتائج</h2>
+      <div class="boardtabs panel-anim">
+        <button class="toggle" id="tabWorld" aria-pressed="true">العالم</button>
+        <button class="toggle" id="tabLocal" aria-pressed="false">متاعي</button>
+      </div>
+      <ol class="scorelist panel-anim" id="scoreList"></ol>
+      <p class="boardnote panel-anim" id="boardNote" hidden></p>
+      <button class="gbtn ghost panel-anim" id="btnScoresBack"><span class="ar" id="backScores">ارجع</span></button>
+    </div>
+
+    <div class="panel" id="panelSettings" hidden>
+      <h2 class="ptitle panel-anim" id="setTitle">الإعدادات</h2>
+      <div class="setrow panel-anim">
+        <span id="sndLbl">الصوت</span>
+        <button class="toggle" id="tglSound" aria-pressed="true">مفعّل</button>
+      </div>
+      <div class="setrow panel-anim">
+        <span id="stepLbl">صوت الخطوات</span>
+        <button class="toggle" id="tglSteps" aria-pressed="true">مفعّل</button>
+      </div>
+      <div class="setrow panel-anim">
+        <span id="volLbl">حجم الصوت</span>
+        <input type="range" id="volRange" min="0" max="100" value="45" aria-label="حجم الصوت">
+      </div>
+      <div class="setrow panel-anim">
+        <span id="langLbl">اللغة</span>
+        <div class="langrow">
+          <button class="toggle lang" id="lang_tn" aria-pressed="true">تونسي</button>
+          <button class="toggle lang" id="lang_fr" aria-pressed="false">FR</button>
+          <button class="toggle lang" id="lang_en" aria-pressed="false">EN</button>
+        </div>
+      </div>
+      <button class="gbtn ghost danger panel-anim" id="btnWipe"><span class="ar" id="wipeLbl">امسح النتائج</span></button>
+      <button class="gbtn ghost panel-anim" id="btnSetBack"><span class="ar" id="backSet">ارجع</span></button>
+    </div>
+
+    <div class="panel" id="panelPause" hidden>
+      <p class="eyebrow panel-anim" id="pauseEyebrow">وقفة</p>
+      <div class="bignum panel-anim" id="pauseScore">0</div>
+      <p class="body panel-anim"><span id="pauseM">0</span><span id="pauseUnit"> متر — خوذ نفس.</span></p>
+      <button class="gbtn panel-anim" id="btnResume">
+        <span class="ar" id="resumeAr">كمّل</span><span class="lat" id="resumeLat">KAMMEL</span><span class="ico">▶</span>
+      </button>
+      <button class="gbtn ghost panel-anim" id="btnPauseRetry"><span class="ar" id="pauseRetryLbl">عاود من الأوّل</span></button>
+      <button class="gbtn ghost panel-anim" id="btnPauseMenu"><span class="ar" id="pauseMenuLbl">القائمة</span></button>
+    </div>
+
+    <div class="panel" id="panelOver" hidden>
+      <p class="eyebrow panel-anim" id="overEyebrow">العطش غلبك</p>
+      <div class="bignum panel-anim" id="finalScore">0</div>
+      <p class="body panel-anim" id="overSummary"></p>
+      <p class="best panel-anim" id="overRank"></p>
+      <button class="gbtn panel-anim" id="btnRetry">
+        <span class="ar" id="retryAr">عاود</span><span class="lat" id="retryLat">3AWED !</span><span class="ico">↻</span>
+      </button>
+      <button class="gbtn ghost panel-anim" id="btnMenu"><span class="ar" id="overMenuLbl">القائمة</span></button>
+    </div>
+  </div>
+
+  <button id="muteBtn" title="الصوت (M)">🔊</button>
+</div>
+<!-- Leaderboard: empty = this site's own /api/scores.
+       Vercel Drop creates a NEW project on every upload, so if you re-deploy
+       the game, paste here the URL of the deployment that holds the Upstash
+       keys, e.g. 'https://ateshane-board.vercel.app' -->
+  <script>window.ATESHANE_API='';</script>
+  <script src="vendor-anime.min.js"></script>
+<script src="vendor-zzfx.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
