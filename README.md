@@ -1,4 +1,4 @@
-# Ateshane — course contre la soif
+# 3otchen — course contre la soif
 
 Endless runner PWA. Auto-run right, tap to jump (double-tap for a double jump), collect
 Tunisian water bottles before the thirst gauge empties. Seven stages, each a Tunisian
@@ -16,59 +16,7 @@ and ZzFX (sound synthesis). Menu with name entry, top-10 high scores, settings.
 Loop: menu → tap to launch (world holds still until the first tap, Flappy-style)
 → continuous speed ramp → game over → instant retry.
 
-## v18 — les scènes se voient enfin, la jauge se renouvelle, le classement devient mondial
 
-**Le barrage : le bug trouvé.** La scène se jouait — en **0,62 seconde**. Chaque tape avançait une réplique, et un joueur en pleine course tape sans arrêt pour sauter : les quatre répliques et le bakchich passaient en 37 images. Invisible. Et si tu ne tapais pas du tout, la scène ne se terminait jamais (time-out à 12 s). Corrigé : chaque réplique tient **1,15 s minimum**, s'enchaîne toute seule à 2,3 s, et l'horloge de l'événement **gèle** pendant la scène. Mesuré après correction : joueur qui matraque 4,0 s · joueur posé 6,3 s · joueur qui ne touche à rien 7,5 s — **4 répliques sur 4 visibles dans les trois cas**.
-
-**Le soleil : les maths disaient « des heures ».** Tirage pondéré, ~10 % pour le soleil, trous de 24–44 s → environ 7 événements dans une course de 4 minutes. Sur **45 minutes simulées, le barrage n'est jamais sorti une seule fois**. Remplacé par un **sac mélangé** : chaque événement passe avant qu'un seul ne se répète, trous raccourcis (13–21 s), verrous de distance abaissés. Après : **8 événements sur 8** par course, premier soleil à 98–250 s, barrage à 181–403 s, et il va **jusqu'au bout** à chaque fois.
-
-**Le fouet était injuste — vrai bug.** Les zones de brûlure ne défilaient pas avec le monde, et le coureur ne bouge pas en x : une frappe à moins de 52 px était une **mort inévitable** (aucun saut ne survit à 0,85 s de feu), et toutes les autres n'étaient que décor. Mon propre harnais v17 affichait `survived=false` — je l'avais laissé passer comme simple ligne de log. Maintenant : la marque **vise là où il sera** au moment du claquement, **défile avec le sol**, et le feu est un coup sec (0,28 s, rayon 30). Testé : **7 courses sur 7 survivent** avec une réaction entre 0,10 s et 0,30 s avant l'impact ; sauter 0,45 s trop tôt échoue — c'est une vraie fenêtre d'adresse derrière un télégraphe de 0,55 s.
-
-**La jauge ne se répète plus.** Elle tire dans un sac de trois, jamais deux fois la même d'affilée :
-- **DHAHAB** — casse tout, aimant, et 3otchana qui démarre **à un endroit différent du morceau** à chaque fois.
-- **CHTA DBABEZ** — les dbabez tombent du ciel sur lui, l'aimant les cueille en plein vol. Pas de 3otchana : pluie + basses ouvertes.
-- **RIH** — bourrasque, +45 % de vitesse, le vent **balaie les obstacles**, et la musique monte en pitch (playbackRate 1,09).
-
-**Langues.** Les noms de régions étaient des constantes françaises affichées dans les trois langues (« Le Sahara » en mode anglais) ; la pancarte STOP et l'étiquette de la gourde étaient de l'arabe en dur. Tout est localisé. Un test **scanne chaque chaîne dessinée sur le canvas** en FR et EN : zéro arabe, sauf «شرطة» sur la livrée de la voiture — c'est la vraie livrée tunisienne, bilingue avec POLICE.
-
-**Classement mondial.** `/api/scores` (fonction serverless Vercel + Upstash Redis), onglets **Monde / Moi**, meilleur score par joueur, contrôle de plausibilité (un score doit tenir dans la distance parcourue), limite de débit par IP, noms assainis. Si le backend n'est pas configuré, l'appel échoue en douceur : le panneau montre le classement local et une note — le jeu ne ralentit jamais et ne casse jamais à cause du réseau.
-
-Vérifié headless en portrait **et** paysage : 12 blocs de tests, 45 minutes de jeu simulé, chaîne audio complète, fantôme v16 toujours mort.
-
-## v17 — la bande-son, la chasse, le barrage, trois langues
-
-**Musique & son (le gros morceau) :**
-- **Rolling Bass** tourne en boucle du menu jusqu'au game over, derrière un vrai **filtre passe-bas** : bouché au menu (~750 Hz), il **s'ouvre d'un coup quand tu lances la course** (15,5 kHz), se referme en pause, s'éteint presque à la mort. « Filter bypasse » = filtre passe-bas — c'est fait.
-- **3otchana blindée** : échantillon WebAudio d'abord (arrêt dur compilé dans le graphe), sinon repli `<audio>` avec minuterie d'arrêt, sinon fanfare — et re-décodage tenté au premier geste. Elle jouera.
-- **Talkie-walkie** : tranches aléatoires (0,55–1,1 s) piochées dans tes 24 s — jamais l'échantillon entier. Vérifié : 60 tranches, toutes dans les bornes.
-- **Respiration lourde** : ton sample en boucle remplace le halètement synthétique (soif basse + chasse du soleil).
-- **Autoplay géré** : un refus navigateur ne bascule plus sur le synthé — on attend le geste et on relance.
-- **Sync jeu ↔ musique** : BPM mesuré (126,25). La jauge d'or pulse sur le temps, les dbabez sautillent, la pastille combo hoche la tête — coupé pendant l'or (3otchana mène la danse).
-- Mixage homogénéisé : musique .40/.50, duck ×.25, pas ré-adoucis, tout sous le limiteur.
-
-**Le soleil chasse (CHAMS GHADHBA v2) :**
-- Entrée **cinématique** : tout s'arrête (comme le barrage), le monde s'assombrit, **ton soleil furieux** (sprite détouré du damier, dents intactes) surgit du ciel avec overshoot, rugit, tremble.
-- Puis il se place **derrière le coureur** et le traque : **ton fouet** en main (lové, il se lève en anticipation), et au claquement ma flamme procédurale prend le relais — mèche, claquement, brasier au sol à sauter.
-- Le coureur **marche** — voûté, épuisé, sueur constante, souffle lourd — à ~55 % de la vitesse. Pas de Higgsfield ici (aucun outil vidéo dans cet environnement, et un mp4 n'a pas sa place dans un canvas) : tout est animé procéduralement, et c'est vérifié image par image.
-
-**Le barrage v2 (la scène) :**
-- La voiture — **livrée officielle** : blanche, bande bleue à pointillés, «شرطة POLICE», gyrophare rouge. L'agent — chemise bleu clair, casquette, badge doré (d'après ta référence).
-- Bulles de dialogue, dzz pour avancer : «بطاقة تعريف !» → «ما عنديش…» → «ما عندكش ؟! عدّيه تحقيق !» → «خوذ قهوتك ☕» — trois **billets de 20 dinars** voltigent vers le flic (−30 points), grésillement radio, «يزّي، برّا !», et ça repart.
-
-**Trois langues :** tounsi (RTL, par défaut), français, anglais — menus, aide, réglages, pause, game over, bannières d'événements, dialogues, punchlines de mort. Les cris signature (Behi ! Barcha ! 3AWED !) restent en derja partout. Sélecteur dans les réglages, persistant.
-
-**Divers :** Sabrine re-rendue depuis ta nouvelle image (+ variante or), marqueur d'impact au sol au lieu de la colonne, halte du soleil = respiration calme (pas de jogging sur place).
-
-Vérifié headless ×2 orientations : arc complet du soleil (intro 1,9 s → marche → 2 claquements → fuite), racket en 4 répliques (−30, libéré), i18n fr/en/tn, arc musical menu→play→pause→play→over, pulsations au bon tempo et coupées pendant l'or, 60 tranches radio dans les bornes, chaîne 3otchana, fantôme v16 toujours mort.
-
-## v16 — le son réparé, le jeu vivant
-
-**Son (bugs réels, prouvés en harness) :**
-- La chanson d'or ne « ressuscite » plus. Cause racine : `stopSample` (mort/pause/retour menu pendant l'or) fadait le gain **sans annuler** les événements d'automation programmés par l'arrêt compilé — un `setValueAtTime` futur remontait le gain à fond ~6 s après la mort, et le 2e `stop()` levait `InvalidStateError` (avalé). Fix : `cancelScheduledValues` + `disconnect` différé. Harness WebAudio-sémantique : ancien fichier → gain **0.714** à t=7.2 s (fantôme audible), nouveau → **0**.
-- Limiteur (DynamicsCompressor) sur le master : fini le crachotement quand pickup×combo + musique + vent s'empilent.
-- ZzFX rerouté dans le **même** AudioContext, à travers le limiteur (avant : contexte séparé, sortie brute).
-- Garde anti-rafale : au retour d'onglet, le séquenceur saute les pas manqués au lieu de les mitrailler.
-- Sifflet du flic (طويط !) pendant le barrage.
 
 **Animation (le jeu respire) :**
 - **Mort cinématique** : hit-stop 90 ms → culbute au ralenti, la chechia s'envole et retombe, rebond + poussière, étoiles qui tournent, vignette qui se ferme — le panneau n'arrive qu'après (~1,5 s).
