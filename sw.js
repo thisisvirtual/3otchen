@@ -1,4 +1,4 @@
-const CACHE = 'ateshane-v19';
+const CACHE = 'ateshane-v20';
 const ASSETS = [
   './', './index.html', './styles.css', './game.js', './audio.js',
   './vendor-anime.min.js', './vendor-zzfx.js', './manifest.webmanifest',
