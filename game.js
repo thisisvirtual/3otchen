@@ -3,7 +3,7 @@
    world holds still until the first tap, one tap back into a run). */
 (() => {
 'use strict';
-const BUILD='v20';
+const BUILD='v22';
 
 // ---------------------------------------------------------------- config
 const VH=540, GROUND_OFF=92, MAX_JUMPS=2;
@@ -367,7 +367,8 @@ const loadAssets=()=>Promise.all([
 const S={MENU:0,READY:1,PLAY:2,OVER:3,PAUSE:4};
 let state=S.MENU;
 
-const game={dist:0,score:0,bottles:0,speed:0,drain:3,hydration:100,
+const LIVES=3, HIT_INVULN=1.5;          // v21: three hearts, then the run ends
+const game={dist:0,score:0,bottles:0,speed:0,drain:3,hydration:100,lives:LIVES,
   shake:0,invuln:0,flash:0,t:0,region:0,wasLow:false,stepAcc:0,ease:0,
   combo:0,comboT:0,gold:0,goldMeter:0,slow:0,freeze:0,jumpBuf:0,
   spawnCount:0,obStreak:0,policeHold:false,sunHold:false,
@@ -380,7 +381,7 @@ let obstacles=[],bottles=[],particles=[],lines=[],popups=[],nextSpawn=0;
 // -- v16 juice state --
 let ghosts=[],hudMotes=[],flies=[],weeds=[],puddleT=0;
 let glint=0,gaugePulse=0,camKick=0,rawDt=0,ghostAcc=0;
-let musicPulse=0,lastBeat=-1;
+let lastBeat=-1,beatPh=0,beatRaw=-1,goldBarA=0;
 let deathFX=null,overDelay=0,pendingOver=null;
 const scarf=[];for(let i=0;i<6;i++)scarf.push({x:0,y:0,px:0,py:0});
 
@@ -398,7 +399,7 @@ function regionMix(){
 }
 
 function resetRun(){
-  Object.assign(game,{dist:0,score:0,bottles:0,speed:0,drain:3,hydration:100,
+  Object.assign(game,{dist:0,score:0,bottles:0,speed:0,drain:3,hydration:100,lives:LIVES,
     shake:0,invuln:0,flash:0,region:0,wasLow:false,stepAcc:0,ease:0,
     combo:0,comboT:0,gold:0,goldMeter:0,slow:0,freeze:0,jumpBuf:0,
     spawnCount:0,obStreak:0,
@@ -406,10 +407,11 @@ function resetRun(){
     policeHold:false,sunHold:false,boon:'',goldMax:GOLD_TIME,rainT:0});
   truck=null;sunA=null;scorch=[];cop=null;
   Audio2.dripStop();Audio2.rainStop();
-  syncCombo();syncGold();
+  syncCombo();syncGold();syncLives(true);goldBarA=0;beatPh=0;beatRaw=-1;lastBeat=-1;
   obstacles=[];bottles=[];particles=[];lines=[];popups=[];rings=[];birds=[];birdTimer=2;
   ghosts=[];hudMotes=[];flies=[];weeds=[];glint=0;gaugePulse=0;camKick=0;ghostAcc=0;
-  fillBag();
+  fillBag();obBag=[];
+  for(const k in _hudLast)delete _hudLast[k];
   deathFX=null;overDelay=0;pendingOver=null;
   player.blink=0;player.blinkT=2.4;player.wipe=0;player.wipeT=5;
   nextSpawn=W+280;camY=0;
@@ -469,8 +471,36 @@ const airTime=()=>{
   const h=JUMP_V*JUMP_V/(2*GRAV_UP);
   return up+Math.sqrt(2*h/GRAV_DOWN);
 };
+// v21 — obstacle catalogue. Every kind has its own footprint and height band
+// so the silhouette alone tells you what you're jumping.
+const OBS={
+  cactus: {w:36,h:[56,82]},   // hendi
+  jar:    {w:40,h:[46,60]},   // zir
+  crate:  {w:48,h:[42,58]},   // caisse of empties
+  barrier:{w:58,h:[42,54]},   // travaux
+  tires:  {w:46,h:[40,58]},   // burnt tyres
+  pipe:   {w:54,h:[32,44]},   // burst main
+  blocks: {w:50,h:[44,64]},   // parpaing
+  bin:    {w:42,h:[52,66]}    // poubelle
+};
+const OB_KINDS=Object.keys(OBS);
+// same discipline as the event scheduler: a shuffled bag, so every kind shows
+// up before any of them repeats. A weighted draw leaves half of them theoretical.
+let obBag=[];
+function obKind(){
+  if(!obBag.length){
+    obBag=OB_KINDS.slice();
+    for(let i=obBag.length-1;i>0;i--){
+      const j=(Math.random()*(i+1))|0;
+      const tmp=obBag[i];obBag[i]=obBag[j];obBag[j]=tmp;
+    }
+  }
+  return obBag.pop();
+}
+const obH=k=>{const b=OBS[k].h;return b[0]+Math.random()*(b[1]-b[0]);};
+
 function spawn(){
-  const gapMin=airTime()*game.speed*1.3+140;
+  const gapMin=airTime()*game.speed*1.3+150;
   const prog=Math.min(game.dist/8000,1);
   game.spawnCount++;
   const ev=evOn();
@@ -478,29 +508,31 @@ function spawn(){
   if(ev==='delestage')density*=.7;                       // fair in the dark
   const needWater=(game.hydration<45||game.obStreak>=2||game.spawnCount<=2)
                   &&ev!=='coupure';                      // the cut means the cut
-  // during CHAMS the sun is the only obstacle — cacti stand down
+  // during CHAMS the sun is the only obstacle — the rest stand down
   if(ev==='coupure'||(!needWater&&ev!=='chams'&&Math.random()<density)){
     game.obStreak++;
-    const mkOb=(dx2,kind,h)=>obstacles.push({x:W+70+dx2,y:groundY()-h,
-      w:kind==='crate'?42:36,h,kind});
-    const K=['cactus','jar','crate'];
-    const kind=()=>K[(Math.random()*K.length)|0];
-    const H=k=>k==='cactus'?56+Math.random()*26:k==='jar'?46+Math.random()*14:40+Math.random()*30;
+    const mkOb=(dx2,kind,h)=>{
+      const hh=h||obH(kind);
+      obstacles.push({x:W+70+dx2,y:groundY()-hh,w:OBS[kind].w,h:hh,kind,
+                      seed:Math.random()*6.283});
+    };
     const roll=Math.random();
     if(roll<.5||prog<.15){                       // single
-      const k=kind();mkOb(0,k,H(k));
-      nextSpawn=gapMin+Math.random()*200;
+      const k=obKind();mkOb(0,k);
+      nextSpawn=gapMin+OBS[k].w+Math.random()*200;
     }else if(roll<.8){                            // pair — land between, jump again
-      const k1=kind(),k2=kind();
-      const between=airTime()*game.speed*1.18+70;
-      mkOb(0,k1,H(k1));mkOb(between,k2,H(k2));
+      const k1=obKind(),k2=obKind();
+      const between=airTime()*game.speed*1.18+70+OBS[k1].w;
+      mkOb(0,k1);mkOb(between,k2);
       nextSpawn=between+gapMin+Math.random()*180;
-    }else if(roll<.93){                           // tall cactus — double jump territory
-      mkOb(0,'cactus',Math.min(86+Math.random()*16,jumpH2()-58));
+    }else if(roll<.93){                           // tall — double-jump territory
+      const k=Math.random()<.5?'cactus':'blocks';
+      mkOb(0,k,Math.min(86+Math.random()*16,jumpH2()-58));
       nextSpawn=gapMin+120+Math.random()*200;
-    }else{                                        // crate stack
-      obstacles.push({x:W+70,y:groundY()-66,w:52,h:66,kind:'crate'});
-      nextSpawn=gapMin+100+Math.random()*200;
+    }else{                                        // wide wall — commit to the jump
+      const k=Math.random()<.5?'crate':'tires';
+      obstacles.push({x:W+70,y:groundY()-66,w:58,h:66,kind:k,seed:Math.random()*6.283});
+      nextSpawn=gapMin+140+Math.random()*200;
     }
   }else{
     game.obStreak=0;
@@ -518,7 +550,7 @@ function spawn(){
       for(;;){break}                                        // ground line default off=0
       bottles.push({x:W+70+i*stepX,y:baseY-off,
         brand:BRANDS[(Math.random()*BRANDS.length)|0],
-        w:H>W?46:30,h:H>W?94:62,bob:Math.random()*Math.PI*2});
+        w:H>W?40:30,h:H>W?80:62,bob:Math.random()*Math.PI*2});
     }
     nextSpawn=180+n*stepX+Math.random()*160;
   }
@@ -1020,11 +1052,13 @@ function update(dt){
         }
       }
     }
-    el('goldT').textContent=Math.ceil(game.gold);
-    el('goldTimer').classList.toggle('blink',game.gold<1.6);
     if(game.gold<=1.6&&game.gold+dt>1.6)Audio2.goldEnd();
     if(game.gold<=0){
       game.gold=0;
+      // a frame ago you were smashing through everything — don't get killed by
+      // the crate you were already standing inside.
+      clearAhead(player.x+150);
+      game.invuln=Math.max(game.invuln,.8);
       if(game.boon==='chta'&&evOn()!=='pluie')Audio2.rainStop();
       if(game.boon==='rih')Audio2.musicRate(1);
       Audio2.setMusicMode('play');
@@ -1053,6 +1087,7 @@ function update(dt){
   player.blinkT-=dt;
   if(player.blinkT<=0){player.blink=.09;player.blinkT=2.2+Math.random()*2.6;}
   if(player.blink>0)player.blink-=dt;
+  if(game.invuln>0)game.invuln-=dt;
   if(evD==='canicule'&&player.onGround){
     player.wipeT-=dt;
     if(player.wipeT<=0){player.wipe=.6;player.wipeT=4+Math.random()*3;}
@@ -1106,21 +1141,7 @@ function update(dt){
   if(game.flash>0)game.flash=Math.max(0,game.flash-dt*2.6);
   if(camKick>0)camKick=Math.max(0,camKick-dt*6);
   if(gaugePulse>0)gaugePulse=Math.max(0,gaugePulse-dt*4);
-  // beat detection: pulse when the phase wraps (skip gold — 3otchana leads there)
-  const bp=Audio2.beatPhase?Audio2.beatPhase():-1;
-  if(bp>=0){
-    if(lastBeat>=0&&bp<lastBeat&&!game.gold){
-      musicPulse=1;
-      gaugePulse=Math.max(gaugePulse,.4);
-      const cc=el('combo');
-      if(game.combo>=2&&cc&&!cc.hidden){
-        cc.classList.add('beat');
-        setTimeout(()=>cc.classList.remove('beat'),130);
-      }
-    }
-    lastBeat=bp;
-  }else lastBeat=-1;
-  if(musicPulse>0)musicPulse=Math.max(0,musicPulse-dt*3.4);
+  goldBarA+=((game.gold>0?1:0)-goldBarA)*Math.min(1,dt*9);
   if(glint>0)glint=Math.max(0,glint-dt*1.6);
   addGhost(dt);stepGhosts(dt);stepScarf(dt);
   stepHudMotes(dt);stepFlies(dt);maybeWeed(dt);stepWeeds(dt);
@@ -1160,12 +1181,12 @@ function update(dt){
         Audio2.smash();
         continue;
       }
-      game.shake=1;game.flash=1;game.slow=.6;
-      setMood('hurt',9);
+      if(game.invuln>0)continue;                       // still blinking from the last one
+      obstacles.splice(i,1);
       burst(o.x+o.w/2,o.y+o.h/2,'#C4453B',20,300);
       burst(player.x,player.y-30,'#F7F4EE',8,180);
-      Audio2.hit();
-      return gameOver('crash');
+      if(!loseLife('crash'))return;                    // that was the last heart
+      continue;
     }
   }
 
@@ -1250,6 +1271,7 @@ function fillBag(){
 }
 const evOk=k=>game.dist>=(EVENTS[k].min||0)
   &&!(k==='coupure'&&game.hydration<55)
+  &&!(k==='chams'&&regionMix().night>.45)     // no angry sun once the sun has set
   &&!(k===game.eventLast&&evBag.length>1);
 function pickEvent(){
   for(let pass=0;pass<2;pass++){
@@ -1292,6 +1314,9 @@ function eventExit(t){
 function stepEvents(dt){
   const e=game.event;
   if(!e){
+    // Gold is its own scene. Nothing telegraphs, banners or blacks out on top
+    // of it — the clock stops and the next event lands after you land.
+    if(game.gold>0)return;
     game.eventCd-=dt;
     if(game.eventCd<=0&&game.ease>=1&&game.dist>400){
       const t=pickEvent();
@@ -1364,8 +1389,11 @@ function stepEvents(dt){
     if(z.phase==='warn'&&z.t<=0){ z.phase='fire'; z.t=.28; Audio2.sizzle();
       burst(z.x,groundY()-6,'#F58C3C',10,180); }
     else if(z.phase==='fire'){
-      if(player.onGround&&Math.abs(player.x-z.x)<30&&game.gold<=0)
-        return gameOver('burn');
+      if(player.onGround&&Math.abs(player.x-z.x)<30&&game.gold<=0&&game.invuln<=0){
+        scorch.splice(i,1);
+        if(!loseLife('burn'))return;
+        break;                                   // clearAhead just reshuffled this list
+      }
       if(z.t<=0)scorch.splice(i,1);
     }
   }
@@ -1434,6 +1462,44 @@ function finishBribe(){
 function breakCombo(){
   game.combo=0;game.comboT=0;syncCombo();
 }
+// v21 — hearts. A hit costs one and buys a blink of mercy instead of ending
+// the run outright; the third one still ends it.
+function clearAhead(px){
+  for(let i=obstacles.length-1;i>=0;i--)
+    if(obstacles[i].x<px)obstacles.splice(i,1);
+  for(let i=scorch.length-1;i>=0;i--)
+    if(scorch[i].x<px)scorch.splice(i,1);
+}
+function loseLife(cause){
+  game.lives--;
+  breakCombo();
+  syncLives();
+  if(game.lives<=0){
+    game.shake=1;game.flash=1;game.slow=.6;
+    setMood('hurt',9);Audio2.hit();
+    gameOver(cause);
+    return false;
+  }
+  game.invuln=HIT_INVULN;
+  game.freeze=.08;game.shake=.85;game.flash=.6;game.slow=.4;
+  game.goldMeter=Math.max(0,game.goldMeter-GOLD_FULL*.3);
+  game.hydration=Math.max(6,game.hydration-6);
+  setMood('hurt',1.2);
+  clearAhead(player.x+190);          // don't land him straight into the next one
+  popup(player.x,player.y-104,'-1 \u2665','#E8564A',17);
+  Audio2.hit();
+  const h=el('hearts');
+  if(h){h.classList.remove('hit');void h.offsetWidth;h.classList.add('hit');}
+  return true;
+}
+function syncLives(force){
+  const h=el('hearts');if(!h)return;
+  if(!force&&h.dataset.n===String(game.lives))return;
+  h.dataset.n=String(game.lives);
+  let s='';
+  for(let i=0;i<LIVES;i++)s+='<i'+(i<game.lives?'':' class="off"')+'>\u2665</i>';
+  h.innerHTML=s;
+}
 function syncCombo(){
   const c=el('combo');if(!c)return;
   if(game.combo>=2){
@@ -1442,10 +1508,8 @@ function syncCombo(){
       easing:'spring(1, 92, 11, 0)',duration:420});}
   }else c.hidden=true;
 }
-function syncGold(){
-  const g=el('goldTimer');if(!g)return;
-  g.hidden=game.gold<=0;
-  if(game.gold<=0)g.classList.remove('blink');
+function syncGold(){                 // the countdown is a canvas bar now
+  if(game.gold<=0&&state!==S.PLAY)goldBarA=0;
 }
 function gainGold(n,sx,sy){
   if(game.gold>0)return;                                   // not while already golden
@@ -1460,6 +1524,16 @@ function activateGold(brand,x,y){
   const kind=nextBoon(), B=BOONS[kind];
   game.boon=kind; game.boonLast=kind;
   game.gold=B.dur; game.goldMax=B.dur; game.rainT=0;
+  // Gold clears the stage. A telegraph in flight is called off before it can
+  // banner over the boon; anything already running is closed out properly, so
+  // the lights come back instead of a blackout sitting under a golden wash.
+  // A held scene (barrage, chams intro) is left alone — it owns the screen.
+  if(game.event&&!game.policeHold&&!game.sunHold){
+    if(game.event.phase==='on')eventExit(game.event.type);
+    game.event=null;
+    game.eventCd=B.dur+1.5;
+    banner.hidden=true; if(bannerTl)bannerTl.pause();
+  }
   game.score+=250;game.slow=.55;
   Audio2.pantStop();Audio2.duckMusic(true);
   if(kind==='dhahab')
@@ -1503,13 +1577,32 @@ function drawBackground(R){
   ctx.fillStyle=g;ctx.fillRect(-60,-60,W+120,H+120);
 
   const hot=evOn()==='canicule';
+  // The sun used to hang in the sky through Carthage and the Sahara, stars and
+  // all. It sets now: cross-faded into a crescent as the night factor climbs.
+  const nf=R.night, sx0=W*.78, sy0=H*.2;
   if(evOn()==='chams'){ /* the angry sun replaces it */ } else {
-  const sr=hot?58+Math.sin(game.t*2.2)*4:46;
-  ctx.fillStyle=hot?'#FBCB5A':R.sun;ctx.globalAlpha=.92;
-  ctx.beginPath();ctx.arc(W*.78,H*.2,sr,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=hot?.22:.14;
-  ctx.beginPath();ctx.arc(W*.78,H*.2,sr+36,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=1; }
+    if(nf<.98){
+      const sr=hot?58+Math.sin(game.t*2.2)*4:46;
+      const sy=sy0+nf*H*.10;                       // dips toward the horizon
+      ctx.fillStyle=hot?'#FBCB5A':R.sun;ctx.globalAlpha=.92*(1-nf);
+      ctx.beginPath();ctx.arc(sx0,sy,sr,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=(hot?.22:.14)*(1-nf);
+      ctx.beginPath();ctx.arc(sx0,sy,sr+36,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    if(nf>.06){
+      const mr=30, mx=W*.70, my=H*.16;
+      ctx.globalAlpha=.10*nf;                      // halo
+      ctx.fillStyle='#F2EEDC';
+      ctx.beginPath();ctx.arc(mx,my,mr+26,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=.92*nf;
+      ctx.beginPath();ctx.arc(mx,my,mr,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=nf;                          // bite the crescent out
+      ctx.fillStyle=R.sky[0];
+      ctx.beginPath();ctx.arc(mx+13,my-7,mr*.92,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+  }
 
   if(R.night>.05){
     ctx.fillStyle='#F7F4EE';
@@ -1826,30 +1919,186 @@ function drawFace(hx,hy){
   ctx.stroke();
 }
 
-function drawObstacles(){
-  for(const o of obstacles){
-    ctx.fillStyle='rgba(0,0,0,.16)';
-    ctx.beginPath();ctx.ellipse(o.x+o.w/2,groundY()+4,o.w*.5,5,0,0,Math.PI*2);ctx.fill();
-    if(o.kind==='cactus'){
-      ctx.fillStyle='#4E7A46';
-      rr(o.x+o.w*.3,o.y,o.w*.4,o.h,8);
-      rr(o.x,o.y+o.h*.3,o.w*.32,o.h*.45,8);
-      rr(o.x+o.w*.68,o.y+o.h*.18,o.w*.32,o.h*.5,8);
-      ctx.fillStyle='#D9584C';
-      ctx.beginPath();ctx.ellipse(o.x+o.w*.5,o.y+4,5,7,0,0,Math.PI*2);ctx.fill();
-    }else if(o.kind==='jar'){
-      ctx.fillStyle='#B4703C';
-      ctx.beginPath();ctx.moveTo(o.x+o.w*.32,o.y);
-      ctx.quadraticCurveTo(o.x-4,o.y+o.h*.5,o.x+o.w*.22,o.y+o.h);
-      ctx.lineTo(o.x+o.w*.78,o.y+o.h);
-      ctx.quadraticCurveTo(o.x+o.w+4,o.y+o.h*.5,o.x+o.w*.68,o.y);
-      ctx.closePath();ctx.fill();
-      ctx.fillStyle='#8E5228';ctx.fillRect(o.x+o.w*.28,o.y-5,o.w*.44,7);
-    }else{
-      ctx.fillStyle='#9C7A4E';rr(o.x,o.y,o.w,o.h,4);
-      ctx.strokeStyle='#7A5C38';ctx.lineWidth=3;
-      ctx.beginPath();ctx.moveTo(o.x,o.y+o.h/2);ctx.lineTo(o.x+o.w,o.y+o.h/2);ctx.stroke();
+// ---- obstacles ----------------------------------------------------------
+// Everything shares the same language: heavy ink outline, a red accent, and a
+// hard contact shadow. Read it as danger before you read what it is.
+const OB_INK='#1E1610';
+function pr(x,y,w,h,r){ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(x,y,w,h,r);else ctx.rect(x,y,w,h);}
+function inked(fill,lw){
+  ctx.fillStyle=fill;ctx.fill();
+  ctx.strokeStyle=OB_INK;ctx.lineWidth=lw||2.6;ctx.lineJoin='round';ctx.stroke();
+}
+function obCactus(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  pr(x+w*.30,y,w*.40,h,9);            inked('#4E7A46');
+  pr(x,y+h*.30,w*.34,h*.46,9);        inked('#4E7A46');
+  pr(x+w*.66,y+h*.16,w*.34,h*.50,9);  inked('#4E7A46');
+  ctx.strokeStyle='rgba(255,255,255,.22)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(x+w*.40,y+9);ctx.lineTo(x+w*.40,y+h-9);ctx.stroke();
+  for(let i=0;i<3;i++){
+    ctx.beginPath();
+    ctx.ellipse(x+w*(.36+i*.13),y+3+(i%2)*4,4.2,5.4,0,0,Math.PI*2);
+    inked('#D9584C',1.8);
+  }
+}
+function obJar(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  const body=()=>{ctx.beginPath();
+    ctx.moveTo(x+w*.32,y+7);
+    ctx.quadraticCurveTo(x-5,y+h*.52,x+w*.24,y+h);
+    ctx.lineTo(x+w*.76,y+h);
+    ctx.quadraticCurveTo(x+w+5,y+h*.52,x+w*.68,y+7);
+    ctx.closePath();};
+  body();inked('#B4703C');
+  ctx.save();body();ctx.clip();
+  ctx.fillStyle='#E4D2B4';ctx.fillRect(x-10,y+h*.44,w+20,5);
+  ctx.fillStyle='#C4453B';ctx.fillRect(x-10,y+h*.55,w+20,4);
+  ctx.fillStyle='rgba(255,255,255,.18)';ctx.fillRect(x+w*.30,y+9,5,h);
+  ctx.restore();
+  pr(x+w*.22,y,w*.56,10,3);inked('#8E5228');
+}
+function obCrate(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  for(let i=0;i<3;i++){                       // empties poking out of the top
+    const bx=x+w*(.24+i*.26);
+    pr(bx-4,y-12,8,15,2);inked('#2E76B8',2);
+    pr(bx-5,y-15,10,4,1.5);inked('#F2B33D',1.6);
+  }
+  pr(x,y,w,h,4);inked('#9C7A4E');
+  ctx.strokeStyle=OB_INK;ctx.lineWidth=2.4;
+  ctx.beginPath();
+  ctx.moveTo(x+3,y+3);ctx.lineTo(x+w-3,y+h-3);
+  ctx.moveTo(x+w-3,y+3);ctx.lineTo(x+3,y+h-3);
+  ctx.moveTo(x,y+h*.5);ctx.lineTo(x+w,y+h*.5);
+  ctx.stroke();
+  ctx.fillStyle='#C4453B';ctx.fillRect(x+w*.16,y+h*.60,w*.68,6);
+}
+function obBarrier(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  ctx.strokeStyle=OB_INK;ctx.lineWidth=5.5;ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(x+w*.20,y+h*.36);ctx.lineTo(x+w*.07,y+h);
+  ctx.moveTo(x+w*.80,y+h*.36);ctx.lineTo(x+w*.93,y+h);
+  ctx.stroke();
+  const py=y+h*.26,ph=h*.36;
+  ctx.save();pr(x,py,w,ph,3);ctx.clip();
+  ctx.fillStyle='#F2EDE3';ctx.fillRect(x,py,w,ph);
+  ctx.fillStyle='#D9382B';
+  for(let i=-1;i<7;i++){
+    const sx=x+i*14;
+    ctx.beginPath();
+    ctx.moveTo(sx,py+ph);ctx.lineTo(sx+8,py);
+    ctx.lineTo(sx+16,py);ctx.lineTo(sx+8,py+ph);
+    ctx.closePath();ctx.fill();
+  }
+  ctx.restore();
+  pr(x,py,w,ph,3);ctx.strokeStyle=OB_INK;ctx.lineWidth=2.6;ctx.stroke();
+  const on=Math.floor(game.t*4+o.seed)%2===0;          // blinking works lamp
+  if(on){ctx.fillStyle='rgba(255,198,74,.30)';
+    ctx.beginPath();ctx.arc(x+w*.5,y+h*.10,15,0,Math.PI*2);ctx.fill();}
+  ctx.beginPath();ctx.arc(x+w*.5,y+h*.10,6,0,Math.PI*2);
+  inked(on?'#FFC64A':'#8A6A22',2);
+}
+function obTires(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  const n=h>50?3:2,th=h/n;
+  for(let i=0;i<n;i++){
+    const cy=y+th*(i+.5),off=(i%2?2.5:-2.5),cx=x+w/2+off;
+    ctx.beginPath();ctx.ellipse(cx,cy,w*.5,th*.55,0,0,Math.PI*2);inked('#23262B');
+    ctx.beginPath();ctx.ellipse(cx,cy,w*.20,th*.24,0,0,Math.PI*2);inked('#6E747C',2);
+    ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=2;
+    for(let k=0;k<5;k++){
+      const a=k*.5-1.1;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a)*w*.30,cy+Math.sin(a)*th*.32);
+      ctx.lineTo(cx+Math.cos(a)*w*.46,cy+Math.sin(a)*th*.48);
+      ctx.stroke();
     }
+  }
+  ctx.fillStyle='#E8564A';ctx.fillRect(x+w*.14,y+1,w*.72,4);
+}
+function obPipe(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  const ty=y+h*.34,th=h*.66;
+  pr(x,ty,w,th,7);inked('#8A9099');
+  ctx.save();pr(x,ty,w,th,7);ctx.clip();
+  ctx.fillStyle='rgba(255,255,255,.22)';ctx.fillRect(x,ty+5,w,5);
+  ctx.fillStyle='#A8603A';ctx.fillRect(x+w*.56,ty,w*.15,h);
+  ctx.restore();
+  pr(x+w*.04,ty-5,w*.16,th+5,3);inked('#6E747C',2.2);
+  pr(x+w*.80,ty-5,w*.16,th+5,3);inked('#6E747C',2.2);
+  const j=Math.sin(game.t*9+o.seed)*4;                 // the burst main
+  ctx.strokeStyle='rgba(150,214,255,.85)';ctx.lineWidth=4;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(x+w*.44,ty);
+  ctx.quadraticCurveTo(x+w*.36,y-20+j,x+w*.14,y-4+j);ctx.stroke();
+  ctx.fillStyle='rgba(190,232,255,.8)';
+  for(let i=0;i<4;i++){
+    const p=(game.t*2.2+i*.25+o.seed)%1;
+    ctx.beginPath();
+    ctx.arc(x+w*.44-p*38,ty-26*Math.sin(p*3.14),2.4,0,Math.PI*2);ctx.fill();
+  }
+}
+function obBlocks(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  const rows=h>52?3:2,rh=h/rows;
+  for(let r=0;r<rows;r++){
+    const off=r%2?-w*.10:0;
+    pr(x+off,y+r*rh,w,rh-2,2);inked('#B0A796');
+    ctx.fillStyle='#6C6459';
+    ctx.fillRect(x+off+w*.16,y+r*rh+rh*.26,w*.22,rh*.42);
+    ctx.fillRect(x+off+w*.60,y+r*rh+rh*.26,w*.22,rh*.42);
+  }
+  ctx.strokeStyle='#C4453B';ctx.lineWidth=3;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(x+w*.20,y+h*.74);ctx.lineTo(x+w*.74,y+h*.42);ctx.stroke();
+}
+function obBin(o){
+  const x=o.x,y=o.y,w=o.w,h=o.h;
+  ctx.beginPath();
+  ctx.moveTo(x+w*.10,y+h*.16);ctx.lineTo(x+w*.90,y+h*.16);
+  ctx.lineTo(x+w*.80,y+h-5);ctx.lineTo(x+w*.20,y+h-5);
+  ctx.closePath();inked('#3E7A4E');
+  ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=2;
+  for(let i=1;i<4;i++){
+    const yy=y+h*.16+i*(h*.68/4);
+    ctx.beginPath();ctx.moveTo(x+w*.18,yy);ctx.lineTo(x+w*.82,yy);ctx.stroke();
+  }
+  pr(x+w*.03,y+h*.01,w*.94,h*.17,4);inked('#2C5B3A');
+  ctx.fillStyle='#C4453B';ctx.fillRect(x+w*.30,y+h*.38,w*.40,7);
+  ctx.fillStyle=OB_INK;
+  ctx.beginPath();ctx.arc(x+w*.26,y+h-4,5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(x+w*.74,y+h-4,5,0,Math.PI*2);ctx.fill();
+}
+// far-field warning chevron: fades in on the right edge, gone before it reaches
+// you. In a blackout it stays lit — you can't dodge what you can't see.
+function obWarn(o,a){
+  const x=o.x+o.w/2,y=o.y-19-Math.sin(game.t*6+o.seed)*3;
+  ctx.save();ctx.globalAlpha=a;
+  ctx.beginPath();ctx.moveTo(x,y-11);ctx.lineTo(x+10,y+6);ctx.lineTo(x-10,y+6);
+  ctx.closePath();
+  ctx.fillStyle='#E8564A';ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.45)';ctx.lineWidth=1.6;ctx.stroke();
+  ctx.fillStyle='#FFF3E8';ctx.fillRect(x-1.4,y-5,2.8,7);
+  ctx.beginPath();ctx.arc(x,y+4,1.5,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+const OB_DRAW={cactus:obCactus,jar:obJar,crate:obCrate,barrier:obBarrier,
+               tires:obTires,pipe:obPipe,blocks:obBlocks,bin:obBin};
+function drawObstacles(){
+  const gy=groundY(),dark=evOn()==='delestage';
+  for(const o of obstacles){
+    if(o.seed===undefined)o.seed=0;
+    ctx.fillStyle='rgba(0,0,0,.30)';            // a real contact shadow
+    ctx.beginPath();ctx.ellipse(o.x+o.w/2,gy+4,o.w*.56,6.5,0,0,Math.PI*2);ctx.fill();
+    ctx.save();
+    (OB_DRAW[o.kind]||obCrate)(o);
+    ctx.restore();
+    // scaled to the screen, not to pixels: on a phone the right half is all
+    // the runway there is.
+    const run=Math.max(120,W-player.x);
+    const far=clamp((o.x-(player.x+run*.42))/(run*.34),0,1);
+    const a=dark?Math.max(.6,far):far;
+    if(a>.02)obWarn(o,a*.85);
   }
 }
 function drawStar(x,y,r,color){
@@ -1865,7 +2114,7 @@ function rr(x,y,w,h,r){ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,r)
 
 function drawBottles(){
   for(const b of bottles){
-    const y=b.y+Math.sin(b.bob)*5-musicPulse*3;
+    const y=b.y+Math.sin(b.bob)*5;          // own bob only — never the beat
     const g=ctx.createRadialGradient(b.x,y,2,b.x,y,40);
     g.addColorStop(0,'rgba(255,255,255,.6)');g.addColorStop(1,'rgba(255,255,255,0)');
     ctx.fillStyle=g;ctx.beginPath();ctx.arc(b.x,y,40,0,Math.PI*2);ctx.fill();
@@ -2223,6 +2472,22 @@ function drawGauge(){
   ctx.textAlign='left';
   ctx.restore();
   drawGoldGauge(gx+gw+12,gy+7);
+  drawGoldBar(gx-8,gy+80,gw+52);
+}
+// Gold countdown: a slim bar tucked under the gauge plate. It fades in when the
+// boon lands and fades out with it — no chip parked in the corner, no numbers.
+function drawGoldBar(x,y,w){
+  if(goldBarA<=.004)return;
+  const h=6, p=clamp(game.gold/Math.max(.001,game.goldMax),0,1);
+  ctx.save();
+  ctx.globalAlpha=goldBarA*.55;
+  ctx.fillStyle='rgba(20,36,61,.75)';rr(x,y,w,h,3);
+  const blink=game.gold>0&&game.gold<1.5&&Math.floor(game.t*8)%2===0;
+  ctx.globalAlpha=goldBarA*(blink?.34:1);
+  const g=ctx.createLinearGradient(x,0,x+w,0);
+  g.addColorStop(0,'#F5D77E');g.addColorStop(1,'#D9A927');
+  ctx.fillStyle=g;rr(x,y,Math.max(3,w*p),h,3);
+  ctx.restore();
 }
 
 function drawReadyHint(){
@@ -2264,7 +2529,11 @@ function render(){
   if(evOn()==='pluie')drawPuddles();
   drawObstacles();drawTruck();drawCop();drawScorch();drawWeeds();drawBottles();drawRings();
   if(gr>0)drawGoldRays(gr);
-  drawGhosts();drawPlayer();drawParticles();drawLines();
+  drawGhosts();
+  if(state===S.PLAY&&game.invuln>0&&Math.floor(game.t*16)%2===0){
+    ctx.save();ctx.globalAlpha=.32;drawPlayer();ctx.restore();
+  }else drawPlayer();
+  drawParticles();drawLines();
   drawForeground(R);drawPopups();
   drawCopChat();
   ctx.restore();
@@ -2313,6 +2582,14 @@ function render(){
       const g2=ctx.createRadialGradient(b.x,yy,2,b.x,yy,26);
       g2.addColorStop(0,'rgba(180,220,255,.5)');g2.addColorStop(1,'rgba(180,220,255,0)');
       ctx.fillStyle=g2;ctx.beginPath();ctx.arc(b.x,yy,26,0,Math.PI*2);ctx.fill();
+    }
+    for(const o of obstacles){                       // and hazards keep an emergency edge
+      const cx=o.x+o.w/2,cy=o.y+o.h/2,r=Math.max(o.w,o.h)*1.15;
+      const g3=ctx.createRadialGradient(cx,cy,4,cx,cy,r);
+      g3.addColorStop(0,'rgba(255,120,90,.32)');g3.addColorStop(1,'rgba(255,120,90,0)');
+      ctx.fillStyle=g3;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='rgba(255,158,128,.7)';ctx.lineWidth=2;
+      ctx.strokeRect(o.x+2,o.y+2,o.w-4,o.h-4);
     }
     drawFlies();
   }
@@ -2408,10 +2685,19 @@ function popCounter(){
   A.remove('#bottles');
   A({targets:'#bottles',scale:[1.42,1],easing:'spring(1, 90, 10, 0)',duration:520});
 }
+// Writing textContent every frame invalidates style even when the number hasn't
+// changed — cheap at 60 Hz, not free at 120. Only write on a change.
+const _hudLast={};
+function setTxt(id,v){
+  if(_hudLast[id]===v)return;
+  _hudLast[id]=v;
+  const e2=el(id);if(e2)e2.textContent=v;
+}
 function syncHUD(){
-  el('bottles').textContent=game.bottles;
-  el('score').textContent=Math.floor(game.score);
-  el('metres').textContent=Math.floor(game.dist/10);
+  syncLives();
+  setTxt('bottles',game.bottles);
+  setTxt('score',Math.floor(game.score));
+  setTxt('metres',Math.floor(game.dist/10));
 }
 function applyLang(l){
   if(!LANGS.includes(l))l='tn';
@@ -2578,6 +2864,10 @@ function resumeGame(){
   const evR=evOn();
   if(evR==='coupure')Audio2.dripStart();
   if(evR==='pluie')Audio2.rainStart();
+  // back from the background you haven't read the screen yet: wipe the corridor
+  // in front and hand him a blink of mercy.
+  clearAhead(player.x+340);
+  game.invuln=Math.max(game.invuln,1.1);
   state=S.PLAY;
 }
 function toMenu(){
@@ -2699,6 +2989,8 @@ click('btnPauseMenu',toMenu);
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden&&state===S.PLAY)pauseGame();
 });
+// some Android browsers never fire visibilitychange for the notification shade
+window.addEventListener('blur',()=>{ if(state===S.PLAY)pauseGame(); });
 
 let deferred=null;
 const INSTALL_KEY='ateshane.installDismiss';
@@ -2734,11 +3026,42 @@ el('btnInstallClose').addEventListener('click',()=>{
 });
 
 // ---------------------------------------------------------------- loop
+// Beat clock. <audio>.currentTime only advances in chunks, so polling it every
+// frame gives a staircase — tolerable at 60 Hz, visible judder at 120. Integrate
+// our own phase at the track's rate and nudge it toward the audio only when the
+// element publishes a fresh reading. Lives in the frame loop, not update(), so it
+// keeps time through pauses, deaths and hit-stop — the music never stops either.
+function stepBeat(raw){
+  const br0=Audio2.beatRate?Audio2.beatRate():0;
+  const br=(typeof br0==='number'&&br0>0)?br0:126.25/60;
+  const bp0=Audio2.beatPhase?Audio2.beatPhase():-1;
+  const bp=(typeof bp0==='number'&&isFinite(bp0))?bp0:-1;
+  beatPh=(beatPh+raw*br)%1;
+  if(bp>=0){
+    if(bp!==beatRaw){
+      beatRaw=bp;
+      let err=bp-beatPh;
+      if(err>.5)err-=1;else if(err<-.5)err+=1;
+      if(Math.abs(err)>.35)beatPh=bp;            // seek / restart: hard lock
+      else beatPh=(beatPh+err*.25+1)%1;          // otherwise pull a quarter of it
+    }
+    if(state===S.PLAY&&lastBeat>=0&&beatPh<lastBeat&&!game.gold){
+      gaugePulse=Math.max(gaugePulse,.4);
+      const cc=el('combo');
+      if(game.combo>=2&&cc&&!cc.hidden){
+        cc.classList.add('beat');
+        setTimeout(()=>cc.classList.remove('beat'),130);
+      }
+    }
+    lastBeat=beatPh;
+  }else lastBeat=-1;
+}
 let last=0;
 function frame(ts){
-  const raw=Math.min((ts-last)/1000||0,.05);
+  const raw=Math.max(0,Math.min((ts-last)/1000||0,.05));  // never negative
   last=ts;
   rawDt=raw;
+  stepBeat(raw);
   let dt=raw;
   if(game.freeze>0){game.freeze-=raw;dt=0;}
   else if(game.slow>0){game.slow-=raw;dt=raw*.35;}
