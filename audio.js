@@ -489,13 +489,16 @@ document.addEventListener&&document.addEventListener('visibilitychange',()=>{
 });
 
 // ---- public ---------------------------------------------------------------
+function beatRate(){                   // beats per second, playbackRate included
+  return MUSIC_BPM/60*((musicEl&&musicEl.playbackRate)||1);
+}
 function beatPhase(){
   if(musicEl&&!useSeq&&!musicEl.paused&&musicEl.currentTime>0)
     return (musicEl.currentTime*MUSIC_BPM/60)%1;
   return -1;
 }
 const api={
-  resume,startWind,setWind,stopWind,startMusic,stopMusic,duckMusic,setMusicMode,musicRate,beatPhase,
+  resume,startWind,setWind,stopWind,startMusic,stopMusic,duckMusic,setMusicMode,musicRate,beatPhase,beatRate,
   loadSample,stopSample,pantStart,pantStop,
   dripStart,dripStop,rainStart,rainStop,
   setVolume(v){ volume=Math.max(0,Math.min(1,v)); applyVolume(); },
